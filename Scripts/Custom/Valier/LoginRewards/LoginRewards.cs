@@ -213,6 +213,7 @@ namespace Server.Custom.LoginRewards
         public static void Initialize()
         {
             LoginRewardsCfg.Reload();
+            Load(); // ensure state is loaded at startup
 
             EventSink.Login += OnLogin;
             EventSink.WorldLoad += OnWorldLoad;
@@ -518,6 +519,8 @@ namespace Server.Custom.LoginRewards
                 if (preview.MilestoneHit > 0)
                     pm.SendMessage(0x59, "Milestone reward claimed for {0}-day streak!", preview.MilestoneHit);
             }
+
+            Save(); // persist claim immediately (prevents re-claim after reboot)
 
             return true;
         }
