@@ -866,7 +866,21 @@ protected abstract string TokenKey { get; }
                 from.SendMessage("Could not activate loot boost.");
             }
         }
-    }
+    
+
+        public override void Serialize(GenericWriter writer)
+        {
+            base.Serialize(writer);
+            writer.Write(0);
+        }
+
+
+        public override void Deserialize(GenericReader reader)
+        {
+            base.Deserialize(reader);
+            reader.ReadInt();
+        }
+}
 
     public class LootBoostToken60m : BaseBoosterToken
     {
@@ -909,7 +923,21 @@ protected abstract string TokenKey { get; }
                 from.SendMessage("Could not activate loot boost.");
             }
         }
-    }
+    
+
+        public override void Serialize(GenericWriter writer)
+        {
+            base.Serialize(writer);
+            writer.Write(0);
+        }
+
+
+        public override void Deserialize(GenericReader reader)
+        {
+            base.Deserialize(reader);
+            reader.ReadInt();
+        }
+}
 
     // ---- Fame tokens ----
     public class FameBoostToken30m : BaseBoosterToken
@@ -953,7 +981,21 @@ protected abstract string TokenKey { get; }
                 from.SendMessage("Could not activate fame boost.");
             }
         }
-    }
+    
+
+        public override void Serialize(GenericWriter writer)
+        {
+            base.Serialize(writer);
+            writer.Write(0);
+        }
+
+
+        public override void Deserialize(GenericReader reader)
+        {
+            base.Deserialize(reader);
+            reader.ReadInt();
+        }
+}
 
     public class FameBoostToken60m : BaseBoosterToken
     {
@@ -996,7 +1038,21 @@ protected abstract string TokenKey { get; }
                 from.SendMessage("Could not activate fame boost.");
             }
         }
-    }
+    
+
+        public override void Serialize(GenericWriter writer)
+        {
+            base.Serialize(writer);
+            writer.Write(0);
+        }
+
+
+        public override void Deserialize(GenericReader reader)
+        {
+            base.Deserialize(reader);
+            reader.ReadInt();
+        }
+}
 
     // ---- Skill gain tokens (reuses your PowerHour system) ----
     // These do NOT use the account-bound state above; they activate the existing PowerHourSystem
