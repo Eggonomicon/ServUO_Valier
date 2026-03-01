@@ -24,7 +24,7 @@ namespace Server.Custom.ValierShop.Packs
         }
 
         // REQUIRED for serialization (even though this is abstract)
-        protected BasePackDeed(Serial serial) : base(serial)
+        public BasePackDeed(Serial serial) : base(serial)
         {
         }
 

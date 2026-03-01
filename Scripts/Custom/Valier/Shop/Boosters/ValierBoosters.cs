@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Xml.Linq;
-using System.Reflection;
 
+using System.Reflection;
 using Server;
 using Server.Accounting;
 using Server.Commands;
@@ -782,7 +782,13 @@ namespace Server.Custom.ValierBoosters
             Weight = 1.0;
         }
 
-        protected abstract string TokenKey { get; }
+        
+        // REQUIRED for serialization
+        public BaseBoosterToken(Serial serial) : base(serial)
+        {
+        }
+
+protected abstract string TokenKey { get; }
 
         protected virtual int DefaultMinutes { get { return 30; } }
 
@@ -828,6 +834,12 @@ namespace Server.Custom.ValierBoosters
             Hue = 0x489;
         }
 
+        // REQUIRED for serialization
+        public LootBoostToken30m(Serial serial) : base(serial)
+        {
+        }
+
+
         protected override string TokenKey { get { return "Loot30m"; } }
         protected override int DefaultMinutes { get { return 30; } }
 
@@ -864,6 +876,12 @@ namespace Server.Custom.ValierBoosters
             Name = "a loot booster (60m)";
             Hue = 0x489;
         }
+
+        // REQUIRED for serialization
+        public LootBoostToken60m(Serial serial) : base(serial)
+        {
+        }
+
 
         protected override string TokenKey { get { return "Loot60m"; } }
         protected override int DefaultMinutes { get { return 60; } }
@@ -903,6 +921,12 @@ namespace Server.Custom.ValierBoosters
             Hue = 0x482;
         }
 
+        // REQUIRED for serialization
+        public FameBoostToken30m(Serial serial) : base(serial)
+        {
+        }
+
+
         protected override string TokenKey { get { return "Fame30m"; } }
         protected override int DefaultMinutes { get { return 30; } }
 
@@ -939,6 +963,12 @@ namespace Server.Custom.ValierBoosters
             Name = "a fame booster (60m)";
             Hue = 0x482;
         }
+
+        // REQUIRED for serialization
+        public FameBoostToken60m(Serial serial) : base(serial)
+        {
+        }
+
 
         protected override string TokenKey { get { return "Fame60m"; } }
         protected override int DefaultMinutes { get { return 60; } }
@@ -980,6 +1010,12 @@ namespace Server.Custom.ValierBoosters
             Hue = 0x48C;
             Weight = 1.0;
         }
+
+        // REQUIRED for serialization
+        public SkillGainBoostToken30m(Serial serial) : base(serial)
+        {
+        }
+
 
         private int Minutes
         {
@@ -1035,6 +1071,12 @@ namespace Server.Custom.ValierBoosters
             Hue = 0x48C;
             Weight = 1.0;
         }
+
+        // REQUIRED for serialization
+        public SkillGainBoostToken60m(Serial serial) : base(serial)
+        {
+        }
+
 
         private int Minutes
         {
