@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using Server;
 using Server.Items;
+using System.Linq;
+using System.Globalization;
+using System.IO;
+using System.Reflection;
+using Server.Commands;
+using Server;
 
 namespace Server.Mobiles
 {
@@ -10,23 +14,6 @@ namespace Server.Mobiles
     {
         private readonly Dictionary<Type, int> m_Table = new Dictionary<Type, int>();
         private Type[] m_Types;
-
-        // ---- Crafted-only sell boost tunables (small-pop economy) ----
-        private const double WeaponMult = 8.0;
-        private const double WeaponExceptionalMult = 12.0;
-
-        private const double ArmorMult = 7.0;
-        private const double ArmorExceptionalMult = 10.0;
-
-        private const double ClothingMult = 3.0;
-        private const double ClothingExceptionalMult = 5.0;
-
-        private const double JewelryMult = 4.0;
-        private const double JewelryExceptionalMult = 6.0;
-
-        // Per-item cap BEFORE any outside stack/amount handling (keeps outliers sane)
-        private const int PerItemCap = 200000; // set to 0 to disable
-
         public GenericSellInfo()
         {
         }
@@ -44,22 +31,24 @@ namespace Server.Mobiles
                 return m_Types;
             }
         }
-
         public void Add(Type type, int price)
         {
             m_Table[type] = price;
             m_Types = null;
         }
 
+        
+        // =========================
+        // Crafted-only sell boost (config-driven)
+        // =========================
         private static int CapSellPrice(int price)
         {
-            if (price < 1)
-                return 1;
+            int cap = CraftedSellBoostConfig.PerItemCap;
 
-            if (PerItemCap > 0 && price > PerItemCap)
-                return PerItemCap;
+            if (cap > 0 && price > cap)
+                return cap;
 
-            return price;
+            return price < 0 ? 0 : price;
         }
 
         private static bool IsPlayerCrafted(Mobile crafter)
@@ -68,25 +57,24 @@ namespace Server.Mobiles
             return pm != null && pm.AccessLevel == AccessLevel.Player;
         }
 
-        private static bool IsTrueBoolProperty(object obj, string name)
+        private static bool IsTrueBoolProperty(object obj, string propName)
         {
-            if (obj == null)
+            if (obj == null || string.IsNullOrWhiteSpace(propName))
                 return false;
 
-            var p = obj.GetType().GetProperty(name);
-
-            if (p != null && p.PropertyType == typeof(bool))
+            try
             {
-                try
-                {
-                    return (bool)p.GetValue(obj, null);
-                }
-                catch
-                {
-                }
-            }
+                PropertyInfo pi = obj.GetType().GetProperty(propName, BindingFlags.Instance | BindingFlags.Public);
 
-            return false;
+                if (pi == null || pi.PropertyType != typeof(bool))
+                    return false;
+
+                return (bool)pi.GetValue(obj, null);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool IsPlayerMade(Item item, Mobile crafter)
@@ -94,85 +82,105 @@ namespace Server.Mobiles
             if (IsPlayerCrafted(crafter))
                 return true;
 
-            // Fallback for some custom crafted items that forget to set Crafter (e.g. mechanical/clockwork weapons)
-            // Only accept this fallback if Crafter is null to avoid boosting GM/NPC-made items.
-            if (crafter == null && IsTrueBoolProperty(item, "PlayerConstructed"))
+            // Fallback for custom crafted items that don't set Crafter consistently.
+            // These bool flags are safe because vendor-bought items won't have them set.
+            if (IsTrueBoolProperty(item, "PlayerConstructed") ||
+                IsTrueBoolProperty(item, "PlayerCrafted") ||
+                IsTrueBoolProperty(item, "CraftedByPlayer") ||
+                IsTrueBoolProperty(item, "MadeByPlayer") ||
+                IsTrueBoolProperty(item, "IsCrafted"))
+            {
                 return true;
+            }
 
             return false;
         }
 
         private static bool IsAmmoCommodity(Item item)
         {
-            // keep commodity ammo near-normal; it's too easy to mass-produce
+            // Keep ammo near-normal; it's too easy to mass-produce and sell
             return item is Arrow || item is Bolt;
         }
 
         private static int ApplyCraftedMultiplier(Item item, int basePrice)
         {
-            if (basePrice <= 0 || item == null || IsAmmoCommodity(item))
+            if (!CraftedSellBoostConfig.Enabled)
                 return basePrice;
 
-            double mult = 1.0;
+            if (basePrice <= 0 || item == null)
+                return basePrice;
 
-            // NOTE: We intentionally do NOT rely on ICraftable here.
-            // On many ServUO branches ICraftable does not expose Crafter/Quality.
+            if (CraftedSellBoostConfig.IgnoreAmmo && IsAmmoCommodity(item))
+                return basePrice;
+
+            // Weapons
             if (item is BaseWeapon weapon)
             {
                 if (!IsPlayerMade(weapon, weapon.Crafter))
                     return basePrice;
 
-                mult = weapon.Quality == ItemQuality.Exceptional ? WeaponExceptionalMult : WeaponMult;
+                double mult = (weapon.Quality == ItemQuality.Exceptional)
+                    ? CraftedSellBoostConfig.WeaponExceptionalMult
+                    : CraftedSellBoostConfig.WeaponMult;
 
                 int p = (int)Math.Round(basePrice * mult);
 
                 if (weapon.Quality == ItemQuality.Low)
-                    p = (int)(p * 0.60);
+                    p = (int)(p * CraftedSellBoostConfig.LowQualityPenalty);
 
                 return CapSellPrice(p);
             }
 
+            // Armor (includes shields)
             if (item is BaseArmor armor)
             {
                 if (!IsPlayerMade(armor, armor.Crafter))
                     return basePrice;
 
-                mult = armor.Quality == ItemQuality.Exceptional ? ArmorExceptionalMult : ArmorMult;
+                double mult = (armor.Quality == ItemQuality.Exceptional)
+                    ? CraftedSellBoostConfig.ArmorExceptionalMult
+                    : CraftedSellBoostConfig.ArmorMult;
 
                 int p = (int)Math.Round(basePrice * mult);
 
                 if (armor.Quality == ItemQuality.Low)
-                    p = (int)(p * 0.60);
+                    p = (int)(p * CraftedSellBoostConfig.LowQualityPenalty);
 
                 return CapSellPrice(p);
             }
 
+            // Clothing (tailoring)
             if (item is BaseClothing clothing)
             {
                 if (!IsPlayerMade(clothing, clothing.Crafter))
                     return basePrice;
 
-                mult = clothing.Quality == ItemQuality.Exceptional ? ClothingExceptionalMult : ClothingMult;
+                double mult = (clothing.Quality == ItemQuality.Exceptional)
+                    ? CraftedSellBoostConfig.ClothingExceptionalMult
+                    : CraftedSellBoostConfig.ClothingMult;
 
                 int p = (int)Math.Round(basePrice * mult);
 
                 if (clothing.Quality == ItemQuality.Low)
-                    p = (int)(p * 0.60);
+                    p = (int)(p * CraftedSellBoostConfig.LowQualityPenalty);
 
                 return CapSellPrice(p);
             }
 
+            // Jewelry
             if (item is BaseJewel jewel)
             {
                 if (!IsPlayerMade(jewel, jewel.Crafter))
                     return basePrice;
 
-                mult = jewel.Quality == ItemQuality.Exceptional ? JewelryExceptionalMult : JewelryMult;
+                double mult = (jewel.Quality == ItemQuality.Exceptional)
+                    ? CraftedSellBoostConfig.JewelryExceptionalMult
+                    : CraftedSellBoostConfig.JewelryMult;
 
                 int p = (int)Math.Round(basePrice * mult);
 
                 if (jewel.Quality == ItemQuality.Low)
-                    p = (int)(p * 0.60);
+                    p = (int)(p * CraftedSellBoostConfig.LowQualityPenalty);
 
                 return CapSellPrice(p);
             }
@@ -201,17 +209,16 @@ namespace Server.Mobiles
                 {
                     price = (int)((double)buyInfo.Price * 0.75);
 
-                    // Crafted-only boost (safe — requires player crafter)
+                    // Crafted-only boost (safe — requires player-made)
                     price = ApplyCraftedMultiplier(item, price);
 
-                    return CapSellPrice(price);
+                    return Math.Max(1, CapSellPrice(price));
                 }
             }
 
-            // BaseVendor price table path (standard)
+            // Crafted-only multiplier for known craft categories
             if (item is BaseArmor armor)
             {
-                // Crafted-only override
                 int boosted = ApplyCraftedMultiplier(item, price);
 
                 if (boosted != price)
@@ -230,7 +237,7 @@ namespace Server.Mobiles
                 price += 100 * (int)armor.Durability;
                 price += 100 * (int)armor.ProtectionLevel;
 
-                return CapSellPrice(price);
+                return Math.Max(1, CapSellPrice(price));
             }
             else if (item is BaseWeapon weapon)
             {
@@ -251,7 +258,7 @@ namespace Server.Mobiles
                 price += 100 * (int)weapon.DurabilityLevel;
                 price += 100 * (int)weapon.DamageLevel;
 
-                return CapSellPrice(price);
+                return Math.Max(1, CapSellPrice(price));
             }
             else if (item is BaseClothing clothing)
             {
@@ -269,7 +276,7 @@ namespace Server.Mobiles
                         price = (int)(price * 1.25);
                 }
 
-                return CapSellPrice(price);
+                return Math.Max(1, CapSellPrice(price));
             }
             else if (item is BaseJewel jewel)
             {
@@ -287,7 +294,7 @@ namespace Server.Mobiles
                         price = (int)(price * 1.25);
                 }
 
-                return CapSellPrice(price);
+                return Math.Max(1, CapSellPrice(price));
             }
             else if (item is BaseBeverage)
             {
@@ -316,11 +323,15 @@ namespace Server.Mobiles
                 else
                     price = price2;
 
-                return CapSellPrice(price);
+                return Math.Max(1, CapSellPrice(price));
             }
 
-            return CapSellPrice(price);
+            // Default: allow crafted multiplier if it applies; otherwise return base table price
+            price = ApplyCraftedMultiplier(item, price);
+
+            return Math.Max(1, CapSellPrice(price));
         }
+
 
         public int GetBuyPriceFor(Item item)
         {
@@ -336,14 +347,17 @@ namespace Server.Mobiles
         {
             if (item.Name != null)
                 return item.Name;
-
-            return item.LabelNumber.ToString();
+            else
+                return item.LabelNumber.ToString();
         }
 
         public bool IsSellable(Item item)
         {
             if (item.QuestItem)
                 return false;
+
+            //if ( item.Hue != 0 )
+            //return false;
 
             return IsInList(item.GetType());
         }
@@ -353,6 +367,9 @@ namespace Server.Mobiles
             if (item.QuestItem)
                 return false;
 
+            //if ( item.Hue != 0 )
+            //return false;
+
             return IsInList(item.GetType());
         }
 
@@ -360,5 +377,172 @@ namespace Server.Mobiles
         {
             return m_Table.ContainsKey(type);
         }
+    
+    // ==========================================================
+    // Crafted Sell Boost Config (key=value) + GM reload command
+    // File: Config/CraftedSellBoost.cfg
+    // ==========================================================
+    public static class CraftedSellBoostConfig
+    {
+        private static readonly object _sync = new object();
+        private static Dictionary<string, string> _kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static bool _loaded;
+
+        public static string ConfigFilePath
+        {
+            get { return Path.Combine(Core.BaseDirectory, "Config", "CraftedSellBoost.cfg"); }
+        }
+
+        public static void Reload()
+        {
+            lock (_sync)
+            {
+                _kv.Clear();
+                _loaded = true;
+
+                try
+                {
+                    if (!File.Exists(ConfigFilePath))
+                        return;
+
+                    string[] raw = File.ReadAllLines(ConfigFilePath);
+
+                    for (int i = 0; i < raw.Length; i++)
+                    {
+                        string line = raw[i];
+
+                        if (line == null)
+                            continue;
+
+                        line = line.Trim();
+
+                        if (line.Length == 0)
+                            continue;
+
+                        if (line.StartsWith("#") || line.StartsWith("//"))
+                            continue;
+
+                        int eq = line.IndexOf('=');
+                        if (eq <= 0)
+                            continue;
+
+                        string key = line.Substring(0, eq).Trim();
+                        string val = line.Substring(eq + 1).Trim();
+
+                        if (key.Length == 0)
+                            continue;
+
+                        _kv[key] = val;
+                    }
+                }
+                catch
+                {
+                    _kv.Clear();
+                }
+            }
+        }
+
+        private static void EnsureLoaded()
+        {
+            if (_loaded)
+                return;
+
+            Reload();
+        }
+
+        private static string GetString(string key, string def)
+        {
+            EnsureLoaded();
+
+            lock (_sync)
+            {
+                string v;
+
+                if (_kv.TryGetValue(key, out v) && !string.IsNullOrWhiteSpace(v))
+                    return v;
+
+                return def;
+            }
+        }
+
+        private static bool GetBool(string key, bool def)
+        {
+            string s = GetString(key, null);
+
+            if (string.IsNullOrWhiteSpace(s))
+                return def;
+
+            bool b;
+            if (bool.TryParse(s, out b))
+                return b;
+
+            int n;
+            if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out n))
+                return n != 0;
+
+            return def;
+        }
+
+        private static int GetInt(string key, int def)
+        {
+            string s = GetString(key, null);
+
+            int n;
+            if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out n))
+                return n;
+
+            return def;
+        }
+
+        private static double GetDouble(string key, double def)
+        {
+            string s = GetString(key, null);
+
+            double d;
+            if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
+                return d;
+
+            return def;
+        }
+
+        // Master switches
+        public static bool Enabled { get { return GetBool("CraftedSellBoost.Enabled", true); } }
+        public static bool IgnoreAmmo { get { return GetBool("CraftedSellBoost.IgnoreAmmo", true); } }
+
+        // Safety cap (per item)
+        public static int PerItemCap { get { return GetInt("CraftedSellBoost.PerItemCap", 200000); } }
+
+        // Low quality penalty applied AFTER multiplier
+        public static double LowQualityPenalty { get { return GetDouble("CraftedSellBoost.LowQualityPenalty", 0.60); } }
+
+        // Multipliers
+        public static double WeaponMult { get { return GetDouble("CraftedSellBoost.Weapon.Mult", 8.0); } }
+        public static double WeaponExceptionalMult { get { return GetDouble("CraftedSellBoost.Weapon.ExceptionalMult", 12.0); } }
+
+        public static double ArmorMult { get { return GetDouble("CraftedSellBoost.Armor.Mult", 7.0); } }
+        public static double ArmorExceptionalMult { get { return GetDouble("CraftedSellBoost.Armor.ExceptionalMult", 10.0); } }
+
+        public static double ClothingMult { get { return GetDouble("CraftedSellBoost.Clothing.Mult", 3.0); } }
+        public static double ClothingExceptionalMult { get { return GetDouble("CraftedSellBoost.Clothing.ExceptionalMult", 5.0); } }
+
+        public static double JewelryMult { get { return GetDouble("CraftedSellBoost.Jewelry.Mult", 3.0); } }
+        public static double JewelryExceptionalMult { get { return GetDouble("CraftedSellBoost.Jewelry.ExceptionalMult", 5.0); } }
     }
+
+    public static class CraftedSellBoostCommands
+    {
+        public static void Initialize()
+        {
+            // Load once at startup
+            CraftedSellBoostConfig.Reload();
+
+            CommandSystem.Register("ReloadCraftedSellBoost", AccessLevel.GameMaster, e =>
+            {
+                CraftedSellBoostConfig.Reload();
+                e.Mobile.SendMessage(0x59, "Reloaded Config/CraftedSellBoost.cfg");
+            });
+        }
+    }
+
+}
 }
