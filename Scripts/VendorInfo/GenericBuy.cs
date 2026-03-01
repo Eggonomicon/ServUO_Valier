@@ -305,11 +305,31 @@ namespace Server.Mobiles
         //get a new instance of an object (we just bought it)
         public virtual IEntity GetEntity()
         {
+		/*** REMOVED ***
             if (m_Args == null || m_Args.Length == 0)
                 return (IEntity)Activator.CreateInstance(m_Type);
 
             return (IEntity)Activator.CreateInstance(m_Type, m_Args);
-            //return (Item)Activator.CreateInstance( m_Type );
+            //return (Item)Activator.CreateInstance( m_Type ); 
+			*** ADDED ***/
+			// "MyVendor" Alambik's system
+            object myObject;
+         
+            if ( m_Args == null || m_Args.Length == 0 )
+                myObject=Activator.CreateInstance( m_Type );
+            else
+                myObject=Activator.CreateInstance( m_Type, m_Args );
+
+            if ( m_Type == typeof(Item) )
+            {
+                ((Item)myObject).ItemID=m_ItemID;
+                ((Item)myObject).Hue=m_Hue;
+                /* Next line not well managed. Commented.*/
+                /*((Item)myObject).Name=m_Name;*/
+            }
+
+            return (IEntity)myObject;
+		/*** END ***/
         }
 
         //Attempt to restock with item, (return true if restock sucessful)

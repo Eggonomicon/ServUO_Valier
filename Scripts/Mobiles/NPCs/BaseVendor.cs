@@ -30,7 +30,12 @@ namespace Server.Mobiles
 
 	public abstract class BaseVendor : BaseCreature, IVendor
 	{
+		/*** REMOVED FOR VALIER VENDER CHANGES
         public static bool UseVendorEconomy = Core.AOS && !Siege.SiegeShard;
+		***/
+		/*** ADDED FOR VALIER VENDOR CHANGE BEGIN ***/
+		public static bool UseVendorEconomy = Config.Get("Vendors.UseVendorEconomy", Core.AOS && !Siege.SiegeShard);
+		/*** ADDED FOR VALIER VENDOR CHANGE END ***/
         public static int BuyItemChange = Config.Get("Vendors.BuyItemChange", 1000);
         public static int SellItemChange = Config.Get("Vendors.SellItemChange", 1000);
         public static int EconomyStockAmount = Config.Get("Vendors.EconomyStockAmount", 500);

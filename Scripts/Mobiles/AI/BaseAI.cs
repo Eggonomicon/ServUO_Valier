@@ -39,7 +39,8 @@ namespace Server.Mobiles
 		AI_Spellweaving,
 		AI_Mystic,
 		AI_Paladin,
-		AI_Necro
+		AI_Necro,
+		AI_MyVendor
 	}
 
 	public enum ActionType

@@ -3413,6 +3413,11 @@ namespace Server.Mobiles
                 case AIType.AI_Necro:
                     m_AI = new NecroAI(this);
                     break;
+				/*** ADDED MyVendor system ***/
+                case AIType.AI_MyVendor:
+                    m_AI = new MyVendorAI(this);
+                    break;
+				/*** END***/
             }
         }
 
