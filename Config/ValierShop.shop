@@ -1,0 +1,37 @@
+# ValierShop.shop
+# =============================
+# Valier Sovereign-Style Shop (Wallet currency)
+# Reads: Config/ValierShop.shop
+# =============================
+#
+# Format:
+#   category|Category Name
+#   item|DisplayName|TypeName|Amount|Price|Hue|Description
+#
+# Notes:
+# - Price is in Valier wallet coins (account-bound).
+# - TypeName can be short or fully qualified.
+# - Amount:
+#     * stackables: sets Amount on the created stack
+#     * non-stackables: creates N copies
+# - Hue: 0 means default
+
+category|Crafting Packs
+item|Basic Blacksmith Pack|BasicSmithPack|1|5|0|200 iron ingots + tools
+item|Basic Tailor Pack|BasicTailorPack|1|4|0|200 cloth + basic tailoring tools
+
+category|Adventure Packs
+item|Basic Adventurer Pack|BasicAdventurerPack|1|5|0|Bandages, scrolls, and potions
+item|Basic Mage Reagent Pack|BasicMageReagentPack|1|6|0|50 of each basic reagent
+
+category|Boosters
+# Loot boost pricing tuned to your earning rate (~2/day login + ~1/hour played)
+item|Loot Booster (30m)|LootBoostToken30m|1|5|0|+50% corpse gold (and small bonus loot roll) for 30 minutes
+item|Loot Booster (60m)|LootBoostToken60m|1|9|0|+50% corpse gold (and small bonus loot roll) for 60 minutes
+
+# Next boosters (ready when you want them in the shop)
+item|Fame Booster (30m)|FameBoostToken30m|1|5|0|+50% fame for 30 minutes
+item|Fame Booster (60m)|FameBoostToken60m|1|9|0|+50% fame for 60 minutes
+
+item|Skill Gain Booster (30m)|SkillGainBoostToken30m|1|8|0|Skill gain multiplier for 30 minutes
+item|Skill Gain Booster (60m)|SkillGainBoostToken60m|1|14|0|Skill gain multiplier for 60 minutes
