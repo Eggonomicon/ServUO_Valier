@@ -12,23 +12,28 @@ using Server.Items;
 namespace Server.Mobiles
 {
     /*
-     * GenericSellInfo (ServUO 57.x)
+     * GenericSell.cs (ServUO 57.x) — Config-driven crafted sell boosts
      *
-     * This version adds CONFIG-DRIVEN crafted sell multipliers (no "min sell" feature).
      * - Reads: Config/CraftedSellBoost.cfg (key=value)
      * - GM command: [ReloadCraftedSellBoost
      * - Boosts ONLY player-crafted items (to prevent NPC buy->sell loops)
      *
-     * Categories:
-     * - Weapon (BaseWeapon)      CraftedSellBoost.Weapon.Mult / ExceptionalMult
-     * - Ranged (BaseRanged)     CraftedSellBoost.Ranged.Mult / ExceptionalMult  (bows/crossbows/mechanical xbows)
-     * - Armor  (BaseArmor)      CraftedSellBoost.Armor.Mult / ExceptionalMult
-     * - Clothing (BaseClothing) CraftedSellBoost.Clothing.Mult / ExceptionalMult (cloaks/robes/etc.)
-     * - Jewelry (BaseJewel)     CraftedSellBoost.Jewelry.Mult / ExceptionalMult
+     * Categories (multiplier keys):
+     *  - Weapons (BaseWeapon, NOT BaseRanged):
+     *      CraftedSellBoost.Weapon.Mult / CraftedSellBoost.Weapon.ExceptionalMult
+     *  - Ranged weapons (BaseRanged):
+     *      CraftedSellBoost.Ranged.Mult / CraftedSellBoost.Ranged.ExceptionalMult
+     *  - Armor (BaseArmor):
+     *      CraftedSellBoost.Armor.Mult / CraftedSellBoost.Armor.ExceptionalMult
+     *  - Clothing (BaseClothing):
+     *      CraftedSellBoost.Clothing.Mult / CraftedSellBoost.Clothing.ExceptionalMult
+     *  - Jewelry (BaseJewel):
+     *      CraftedSellBoost.Jewelry.Mult / CraftedSellBoost.Jewelry.ExceptionalMult
      *
-     * Important:
-     * - The multiplier is applied to the BASE price only.
-     * - Magic add-ons (durability/damage/protection levels) are added AFTER and are not multiplied.
+     * Notes:
+     * - Multiplier is applied after ServUO's normal quality adjustments (Low/Exceptional).
+     * - Magic add-ons (weapon/armor durability/damage/protection) are added AFTER and are not multiplied.
+     * - Optional cap applies to the FINAL crafted sell price.
      */
 
     public static class CraftedSellBoostConfig
@@ -150,14 +155,14 @@ namespace Server.Mobiles
 
         public static bool Enabled { get { return GetBool("CraftedSellBoost.Enabled", true); } }
 
-        // Optional absolute cap on final price for crafted items (0 disables)
+        // Optional cap on final crafted sell price (0 disables)
         public static int Cap { get { return GetInt("CraftedSellBoost.Cap", 0); } }
 
         public static double WeaponMult { get { return GetDouble("CraftedSellBoost.Weapon.Mult", 8.0); } }
         public static double WeaponExceptionalMult { get { return GetDouble("CraftedSellBoost.Weapon.ExceptionalMult", 12.0); } }
 
-        public static double RangedMult { get { return GetDouble("CraftedSellBoost.Ranged.Mult", 8.0); } }
-        public static double RangedExceptionalMult { get { return GetDouble("CraftedSellBoost.Ranged.ExceptionalMult", 12.0); } }
+        public static double RangedMult { get { return GetDouble("CraftedSellBoost.Ranged.Mult", WeaponMult); } }
+        public static double RangedExceptionalMult { get { return GetDouble("CraftedSellBoost.Ranged.ExceptionalMult", WeaponExceptionalMult); } }
 
         public static double ArmorMult { get { return GetDouble("CraftedSellBoost.Armor.Mult", 7.0); } }
         public static double ArmorExceptionalMult { get { return GetDouble("CraftedSellBoost.Armor.ExceptionalMult", 10.0); } }
@@ -184,7 +189,6 @@ namespace Server.Mobiles
         public static void Initialize()
         {
             CraftedSellBoostConfig.Reload();
-
             CommandSystem.Register("ReloadCraftedSellBoost", AccessLevel.GameMaster, OnReload);
         }
 
@@ -231,8 +235,15 @@ namespace Server.Mobiles
 
         public int GetSellPriceFor(Item item, BaseVendor vendor)
         {
+            if (item == null || item.Deleted)
+                return 0;
+
             int price = 0;
             m_Table.TryGetValue(item.GetType(), out price);
+
+            // If it's not in the sell table, it's not sellable.
+            if (price <= 0)
+                return 0;
 
             // Vendor economy baseline (do NOT early return; crafted boosts may still apply)
             if (vendor != null && BaseVendor.UseVendorEconomy)
@@ -243,15 +254,13 @@ namespace Server.Mobiles
 
                 if (buyInfo != null)
                 {
-                    price = Math.Max(1, (int)((double)buyInfo.Price * .75));
+                    price = Math.Max(1, (int)(buyInfo.Price * 0.75));
                 }
             }
 
-            // ===== Normal ServUO adjustments (base price modifiers) =====
-            // We'll keep these as "base" for multipliers, but we will not multiply the magic add-ons below.
-
             int magicAdds = 0;
 
+            // ===== Normal ServUO adjustments (base price modifiers) =====
             if (item is BaseArmor)
             {
                 BaseArmor armor = (BaseArmor)item;
@@ -326,14 +335,16 @@ namespace Server.Mobiles
                 price = 1;
 
             // ===== Crafted-only sell boost (config-driven) =====
-            if (CraftedSellBoostConfig.Enabled && IsPlayerCrafted(item))
+            bool crafted = CraftedSellBoostConfig.Enabled && IsPlayerCrafted(item);
+
+            if (crafted)
             {
                 bool exceptional = IsExceptional(item);
 
                 double mult = 1.0;
 
-                // Ranged (bows/crossbows/etc.) get their own multipliers
                 BaseWeapon w = item as BaseWeapon;
+
                 if (w != null && w is BaseRanged)
                     mult = exceptional ? CraftedSellBoostConfig.RangedExceptionalMult : CraftedSellBoostConfig.RangedMult;
                 else if (item is BaseWeapon)
@@ -352,8 +363,7 @@ namespace Server.Mobiles
             // Add magic add-ons after crafted multiplier (not multiplied)
             price += magicAdds;
 
-            // Optional cap for crafted items
-            if (CraftedSellBoostConfig.Enabled && IsPlayerCrafted(item))
+            if (crafted)
                 price = CraftedSellBoostConfig.ApplyCap(price);
 
             if (price < 1)
@@ -369,6 +379,9 @@ namespace Server.Mobiles
 
         public int GetBuyPriceFor(Item item, BaseVendor vendor)
         {
+            if (item == null || item.Deleted)
+                return 0;
+
             int price = 0;
             m_Table.TryGetValue(item.GetType(), out price);
 
@@ -387,6 +400,35 @@ namespace Server.Mobiles
             }
 
             return Math.Max(1, price);
+        }
+
+        // ServUO IShopSellInfo interface requirements
+        public string GetNameFor(Item item)
+        {
+            if (item == null)
+                return null;
+
+            return item.Name ?? item.GetType().Name;
+        }
+
+        public bool IsSellable(Item item)
+        {
+            if (item == null || item.Deleted)
+                return false;
+
+            return m_Table.ContainsKey(item.GetType());
+        }
+
+        public bool IsResellable(Item item)
+        {
+            if (item == null || item.Deleted)
+                return false;
+
+            // Safety: never resell player-crafted items (avoids loops and clutter).
+            if (CraftedSellBoostConfig.Enabled && IsPlayerCrafted(item))
+                return false;
+
+            return m_Table.ContainsKey(item.GetType());
         }
 
         // =========================
@@ -429,12 +471,9 @@ namespace Server.Mobiles
 
             // Preferred: ItemQuality enum
             object q = TryGetPropertyValue(item, "Quality");
-            if (q != null)
-            {
-                // Compare by name to avoid enum-value mismatch between shards
-                if (q.ToString().Equals("Exceptional", StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
+
+            if (q != null && q.ToString().Equals("Exceptional", StringComparison.OrdinalIgnoreCase))
+                return true;
 
             // Fallback: Exceptional bool
             object ex = TryGetPropertyValue(item, "Exceptional");
