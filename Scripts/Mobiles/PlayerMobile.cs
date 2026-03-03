@@ -3,6 +3,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
+using System.IO;
+
 
 using Server.Accounting;
 using Server.ContextMenus;
@@ -863,6 +866,191 @@ namespace Server.Mobiles
 			}
 		}
 
+        #region PlayerCaps.cfg Sync (TotalStatCap / StrMaxCap / DexMaxCap / IntMaxCap)
+        // Your Config/PlayerCaps.cfg contains BOTH:
+        // - TotalStatCap (used for total STR+DEX+INT cap)
+        // - StrMaxCap/DexMaxCap/IntMaxCap (enhanced per-stat caps)
+        //
+        // Some shards only applied TotalStatCap on NEW character creation. This helper makes sure
+        // existing characters are synced on login, and clamps display values using the config.
+        private static class PlayerCapsCfg
+        {
+            private static readonly object _sync = new object();
+
+            private static string _path;
+            private static DateTime _lastWriteUtc;
+            private static bool _loaded;
+
+            public static int TotalStatCap { get; private set; } = 225;
+
+            public static int StrMaxCap { get; private set; } = 150;
+            public static int DexMaxCap { get; private set; } = 150;
+            public static int IntMaxCap { get; private set; } = 150;
+
+            public static int StrCap { get; private set; } = 125;
+            public static int DexCap { get; private set; } = 125;
+            public static int IntCap { get; private set; } = 125;
+
+            public static void EnsureLoaded()
+            {
+                lock (_sync)
+                {
+                    if (_path == null)
+                    {
+                        _path = Path.Combine(Core.BaseDirectory, "Config", "PlayerCaps.cfg");
+                    }
+
+                    DateTime writeUtc = DateTime.MinValue;
+
+                    try
+                    {
+                        if (File.Exists(_path))
+                        {
+                            writeUtc = File.GetLastWriteTimeUtc(_path);
+                        }
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+
+                    if (_loaded && writeUtc == _lastWriteUtc)
+                    {
+                        return;
+                    }
+
+                    // defaults if cfg missing/unreadable
+                    TotalStatCap = 225;
+
+                    StrMaxCap = 150;
+                    DexMaxCap = 150;
+                    IntMaxCap = 150;
+
+                    StrCap = 125;
+                    DexCap = 125;
+                    IntCap = 125;
+
+                    if (!File.Exists(_path))
+                    {
+                        _loaded = true;
+                        _lastWriteUtc = writeUtc;
+                        return;
+                    }
+
+                    try
+                    {
+                        foreach (string raw in File.ReadAllLines(_path))
+                        {
+                            string line = raw;
+
+                            int hash = line.IndexOf('#');
+                            if (hash >= 0)
+                            {
+                                line = line.Substring(0, hash);
+                            }
+
+                            line = line.Trim();
+
+                            if (line.Length == 0)
+                            {
+                                continue;
+                            }
+
+                            int eq = line.IndexOf('=');
+
+                            if (eq <= 0)
+                            {
+                                continue;
+                            }
+
+                            string key = line.Substring(0, eq).Trim();
+                            string val = line.Substring(eq + 1).Trim();
+
+                            if (key.Length == 0)
+                            {
+                                continue;
+                            }
+
+                            // ints only for these fields
+                            if (!Int32.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv))
+                            {
+                                continue;
+                            }
+
+                            if (iv < 0)
+                            {
+                                iv = 0;
+                            }
+
+                            switch (key.ToLowerInvariant())
+                            {
+                                case "totalstatcap":
+                                    TotalStatCap = iv;
+                                    break;
+
+                                // NOTE: Some older configs used StatCap as total stat cap.
+                                // Your config uses TotalStatCap, so we prefer that.
+                                case "statcap":
+                                    // Only use StatCap if TotalStatCap wasn't set elsewhere (legacy compatibility).
+                                    if (TotalStatCap <= 0 || TotalStatCap == 225)
+                                    {
+                                        TotalStatCap = iv;
+                                    }
+                                    break;
+
+                                case "strmaxcap":
+                                    StrMaxCap = iv;
+                                    break;
+                                case "dexmaxcap":
+                                    DexMaxCap = iv;
+                                    break;
+                                case "intmaxcap":
+                                    IntMaxCap = iv;
+                                    break;
+
+                                case "strcap":
+                                    StrCap = iv;
+                                    break;
+                                case "dexcap":
+                                    DexCap = iv;
+                                    break;
+                                case "intcap":
+                                    IntCap = iv;
+                                    break;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("[PlayerCapsCfg] ERROR reading {0}: {1}", _path, ex);
+                    }
+
+                    _loaded = true;
+                    _lastWriteUtc = writeUtc;
+                }
+            }
+
+            public static void ApplyTo(PlayerMobile pm)
+            {
+                if (pm == null)
+                {
+                    return;
+                }
+
+                EnsureLoaded();
+
+                // Make the paperdoll stat-cap line reflect TotalStatCap from the config
+                if (TotalStatCap > 0 && pm.StatCap != TotalStatCap)
+                {
+                    pm.StatCap = TotalStatCap;
+                    pm.Delta(MobileDelta.Stat); // not MobileDelta.Stat (enum is singular in ServUO)
+                }
+            }
+        }
+        #endregion
+
+
+
         #region Enhanced Client
         private static void Targeted_Skill(TargetedSkillEventArgs e)
         {
@@ -1098,7 +1286,7 @@ namespace Server.Mobiles
 			UpdateResistances();
 		}
 
-		public override int MaxWeight { get { return (((Core.ML && Race == Race.Human) ? 100 : 40) + (int)(3.5 * Str)); } }
+		public override int MaxWeight { get { return ((((Core.ML && Race == Race.Human) ? 100 : 40) + (int)(3.5 * Str))) + Server.Custom.ValierCarry.ValierCarryCapacitySystem.GetBonus(this); } }
 
 		private int m_LastGlobalLight = -1, m_LastPersonalLight = -1;
 
@@ -1219,6 +1407,13 @@ namespace Server.Mobiles
 			Mobile from = e.Mobile;
 
 			CheckAtrophies(from);
+
+			// Sync stat caps from Config/PlayerCaps.cfg (existing characters too)
+			if (from is PlayerMobile pm)
+			{
+				PlayerCapsCfg.ApplyTo(pm);
+			}
+
 
 			if (AccountHandler.LockdownLevel > AccessLevel.VIP)
 			{
@@ -2009,7 +2204,9 @@ namespace Server.Mobiles
 				{
                     var str = base.Str;
 
-                    return Math.Min(base.Str, StrMaxCap);
+                    PlayerCapsCfg.EnsureLoaded();
+
+                    return Math.Min(base.Str, PlayerCapsCfg.StrMaxCap);
 				}
 
 				return base.Str;
@@ -2024,7 +2221,9 @@ namespace Server.Mobiles
 			{
 				if (Core.ML && IsPlayer())
 				{
-					return Math.Min(base.Int, IntMaxCap);
+					PlayerCapsCfg.EnsureLoaded();
+
+					return Math.Min(base.Int, PlayerCapsCfg.IntMaxCap);
 				}
 
 				return base.Int;
@@ -2041,7 +2240,9 @@ namespace Server.Mobiles
 				{
                     var dex = base.Dex;
 
-                    return Math.Min(dex, DexMaxCap);
+                    PlayerCapsCfg.EnsureLoaded();
+
+                    return Math.Min(dex, PlayerCapsCfg.DexMaxCap);
 				}
 
 				return base.Dex;

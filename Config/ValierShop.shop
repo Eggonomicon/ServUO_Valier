@@ -35,3 +35,24 @@ item|Fame Booster (60m)|FameBoostToken60m|1|9|0|+50% fame for 60 minutes
 
 item|Skill Gain Booster (30m)|SkillGainBoostToken30m|1|8|0|Skill gain multiplier for 30 minutes
 item|Skill Gain Booster (60m)|SkillGainBoostToken60m|1|14|0|Skill gain multiplier for 60 minutes
+
+# Weight Reduction Items
+category|Convenience (Weight)
+item|Ingot Satchel (75% reduction)|ValierIngotSatchel|1|8|0|Holds ingots only. Ingots inside weigh 25%.
+item|Ore Satchel (75% reduction)|ValierOreSatchel|1|8|0|Holds ore only. Ore inside weighs 25%.
+item|Lumber Satchel (75% reduction)|ValierLumberSatchel|1|8|0|Holds boards/logs only. Lumber inside weighs 25%.
+item|Tradesman's Backpack (65% reduction)|ValierTradesmanBackpack|1|12|0|Holds ore/ingots/boards/logs. Contents weigh 35%.
+
+# Carry Weight incresing Items
+category|Convenience (Carry)
+item|Pack Mule Sash (+STR)|ValierPackMuleSash|1|10|0|Increases STR (carry capacity).
+item|Pack Mule Ring (+STR)|ValierPackMuleRing|1|10|0|Increases STR (carry capacity).category|Convenience (Weight)
+item|Ingot Satchel (75% reduction)|ValierIngotSatchel|1|8|0|Holds ingots only. Ingots inside weigh 25%.
+item|Ore Satchel (75% reduction)|ValierOreSatchel|1|8|0|Holds ore only. Ore inside weighs 25%.
+item|Lumber Satchel (75% reduction)|ValierLumberSatchel|1|8|0|Holds boards/logs only. Lumber inside weighs 25%.
+item|Tradesman's Backpack (65% reduction)|ValierTradesmanBackpack|1|12|0|Holds ore/ingots/boards/logs. Contents weigh 35%.
+
+# Carry Weight incresing Items
+category|Convenience (Carry)
+item|Pack Mule Sash (+STR)|ValierPackMuleSash|1|10|0|Increases STR (carry capacity).
+item|Pack Mule Ring (+STR)|ValierPackMuleRing|1|10|0|Increases STR (carry capacity).

@@ -241,10 +241,8 @@ namespace Server.Mobiles
             int price = 0;
             m_Table.TryGetValue(item.GetType(), out price);
 
-            // If it's not in the sell table, it's not sellable.
-            if (price <= 0)
-                return 0;
-
+            // NOTE: Do NOT early-return before vendor economy baseline.
+            // Some economy items may not have a static table price.
             // Vendor economy baseline (do NOT early return; crafted boosts may still apply)
             if (vendor != null && BaseVendor.UseVendorEconomy)
             {
@@ -257,6 +255,10 @@ namespace Server.Mobiles
                     price = Math.Max(1, (int)(buyInfo.Price * 0.75));
                 }
             }
+            // If no price was found, this item is not sellable.
+            if (price <= 0)
+                return 0;
+
 
             int magicAdds = 0;
 
@@ -416,19 +418,15 @@ namespace Server.Mobiles
             if (item == null || item.Deleted)
                 return false;
 
-            return m_Table.ContainsKey(item.GetType());
+            int p;
+            return m_Table.TryGetValue(item.GetType(), out p) && p > 0;
         }
 
         public bool IsResellable(Item item)
         {
-            if (item == null || item.Deleted)
-                return false;
-
-            // Safety: never resell player-crafted items (avoids loops and clutter).
-            if (CraftedSellBoostConfig.Enabled && IsPlayerCrafted(item))
-                return false;
-
-            return m_Table.ContainsKey(item.GetType());
+            // Resellable should not prevent payout.
+            // Keep it simple: if the vendor will buy it, it can be resold.
+            return IsSellable(item);
         }
 
         // =========================
