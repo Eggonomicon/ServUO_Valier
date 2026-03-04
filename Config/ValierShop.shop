@@ -1,8 +1,8 @@
-# ValierShop.shop
-# =============================
-# Valier Sovereign-Style Shop (Wallet currency)
-# Reads: Config/ValierShop.shop
-# =============================
+# ValierShop.shop (CLEANED for ValierUO)
+# - Removes duplicate Convenience (Carry) category block
+# - Keeps weight-reduction bags under Convenience (Weight)
+# - Keeps Pack Mule items under Convenience (Carry)
+# - Renames Pack Mule labels to (+Carry) to match your pure carry-capacity system
 #
 # Format:
 #   category|Category Name
@@ -11,48 +11,29 @@
 # Notes:
 # - Price is in Valier wallet coins (account-bound).
 # - TypeName can be short or fully qualified.
-# - Amount:
-#     * stackables: sets Amount on the created stack
-#     * non-stackables: creates N copies
-# - Hue: 0 means default
 
 category|Crafting Packs
-item|Basic Blacksmith Pack|BasicSmithPack|1|5|0|200 iron ingots + tools
-item|Basic Tailor Pack|BasicTailorPack|1|4|0|200 cloth + basic tailoring tools
+item|Basic Blacksmith Pack|BasicSmithPack|1|5|0|Tools + starter ingots
+item|Basic Tailor Pack|BasicTailorPack|1|4|0|Tools + starter cloth/leather
 
 category|Adventure Packs
-item|Basic Adventurer Pack|BasicAdventurerPack|1|5|0|Bandages, scrolls, and potions
-item|Basic Mage Reagent Pack|BasicMageReagentPack|1|6|0|50 of each basic reagent
+item|Basic Adventurer Pack|BasicAdventurerPack|1|5|0|Bandages, food, basic supplies
+item|Basic Mage Reagent Pack|BasicMageReagentPack|1|6|0|Starter reagents
 
 category|Boosters
-# Loot boost pricing tuned to your earning rate (~2/day login + ~1/hour played)
-item|Loot Booster (30m)|LootBoostToken30m|1|5|0|+50% corpse gold (and small bonus loot roll) for 30 minutes
-item|Loot Booster (60m)|LootBoostToken60m|1|9|0|+50% corpse gold (and small bonus loot roll) for 60 minutes
+item|Loot Booster (30m)|LootBoostToken30m|1|5|0|+Loot chance for 30 minutes
+item|Loot Booster (60m)|LootBoostToken60m|1|9|0|+Loot chance for 60 minutes
+item|Fame Booster (30m)|FameBoostToken30m|1|5|0|+Fame gain for 30 minutes
+item|Fame Booster (60m)|FameBoostToken60m|1|9|0|+Fame gain for 60 minutes
+item|Skill Gain Booster (30m)|SkillGainBoostToken30m|1|8|0|+Skill gain for 30 minutes
+item|Skill Gain Booster (60m)|SkillGainBoostToken60m|1|14|0|+Skill gain for 60 minutes
 
-# Next boosters (ready when you want them in the shop)
-item|Fame Booster (30m)|FameBoostToken30m|1|5|0|+50% fame for 30 minutes
-item|Fame Booster (60m)|FameBoostToken60m|1|9|0|+50% fame for 60 minutes
-
-item|Skill Gain Booster (30m)|SkillGainBoostToken30m|1|8|0|Skill gain multiplier for 30 minutes
-item|Skill Gain Booster (60m)|SkillGainBoostToken60m|1|14|0|Skill gain multiplier for 60 minutes
-
-# Weight Reduction Items
 category|Convenience (Weight)
-item|Ingot Satchel (75% reduction)|ValierIngotSatchel|1|8|0|Holds ingots only. Ingots inside weigh 25%.
-item|Ore Satchel (75% reduction)|ValierOreSatchel|1|8|0|Holds ore only. Ore inside weighs 25%.
-item|Lumber Satchel (75% reduction)|ValierLumberSatchel|1|8|0|Holds boards/logs only. Lumber inside weighs 25%.
-item|Tradesman's Backpack (65% reduction)|ValierTradesmanBackpack|1|12|0|Holds ore/ingots/boards/logs. Contents weigh 35%.
+item|Ingot Satchel (75% reduction)|ValierIngotSatchel|1|8|0|Only holds ingots; reduces their weight
+item|Ore Satchel (75% reduction)|ValierOreSatchel|1|8|0|Only holds ore/granite; reduces their weight
+item|Lumber Satchel (75% reduction)|ValierLumberSatchel|1|8|0|Only holds logs/boards; reduces their weight
+item|Tradesman's Backpack (65% reduction)|ValierTradesmanBackpack|1|12|0|General backpack; reduces weight of contents
 
-# Carry Weight incresing Items
 category|Convenience (Carry)
-item|Pack Mule Sash (+STR)|ValierPackMuleSash|1|10|0|Increases STR (carry capacity).
-item|Pack Mule Ring (+STR)|ValierPackMuleRing|1|10|0|Increases STR (carry capacity).category|Convenience (Weight)
-item|Ingot Satchel (75% reduction)|ValierIngotSatchel|1|8|0|Holds ingots only. Ingots inside weigh 25%.
-item|Ore Satchel (75% reduction)|ValierOreSatchel|1|8|0|Holds ore only. Ore inside weighs 25%.
-item|Lumber Satchel (75% reduction)|ValierLumberSatchel|1|8|0|Holds boards/logs only. Lumber inside weighs 25%.
-item|Tradesman's Backpack (65% reduction)|ValierTradesmanBackpack|1|12|0|Holds ore/ingots/boards/logs. Contents weigh 35%.
-
-# Carry Weight incresing Items
-category|Convenience (Carry)
-item|Pack Mule Sash (+STR)|ValierPackMuleSash|1|10|0|Increases STR (carry capacity).
-item|Pack Mule Ring (+STR)|ValierPackMuleRing|1|10|0|Increases STR (carry capacity).
+item|Pack Mule Sash (+Carry)|ValierPackMuleSash|1|10|0|Adds carry capacity (from ValierCarryCapacity.cfg)
+item|Pack Mule Ring (+Carry)|ValierPackMuleRing|1|10|0|Adds carry capacity (from ValierCarryCapacity.cfg)
