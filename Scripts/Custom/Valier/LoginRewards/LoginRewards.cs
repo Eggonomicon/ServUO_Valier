@@ -167,7 +167,12 @@ namespace Server.Custom.LoginRewards
 
         // Public settings
         public static bool Enabled { get { return GetBool("LoginRewards.Enabled", true); } }
-        public static bool OncePerAccountPerDay { get { return GetBool("LoginRewards.OncePerAccountPerDay", true); } }
+        public static bool OncePerAccountPerDay { get { return GetBool("LoginRewards.OncePerAccountPerDay", false); } }
+
+        // Identity / claim scope:
+        // - Character (default): each character can claim daily rewards independently.
+        // - Account: one claim per account per day (legacy behavior).
+        public static string IdentityMode { get { return GetString("LoginRewards.IdentityMode", OncePerAccountPerDay ? "Account" : "Character"); } }
 
         public static string Mode { get { return GetString("LoginRewards.Mode", "DailyStreak"); } }           // DailyStreak, Calendar7
         public static string ClaimMode { get { return GetString("LoginRewards.ClaimMode", "Auto"); } }        // Auto, Gump
@@ -251,6 +256,7 @@ namespace Server.Custom.LoginRewards
             m.SendMessage(0x59, "LoginRewards.Mode={0}", LoginRewardsCfg.Mode);
             m.SendMessage(0x59, "LoginRewards.ClaimMode={0}", LoginRewardsCfg.ClaimMode);
             m.SendMessage(0x59, "LoginRewards.OncePerAccountPerDay={0}", LoginRewardsCfg.OncePerAccountPerDay);
+            m.SendMessage(0x59, "LoginRewards.IdentityMode={0}", LoginRewardsCfg.IdentityMode);
             m.SendMessage(0x59, "LoginRewards.ChoiceEveryDays={0}", LoginRewardsCfg.ChoiceEveryDays);
             m.SendMessage(0x59, "LoginRewards.ChoiceReplacesBase={0}", LoginRewardsCfg.ChoiceReplacesBase);
         }
@@ -362,7 +368,7 @@ namespace Server.Custom.LoginRewards
             else
             {
                 // Auto mode: if choice day, show gump so player can pick
-                RewardState st = GetOrCreateState(GetIdentityKey(pm));
+                RewardState st = GetOrCreateState(pm);
                 PreviewRewards preview = BuildPreview(PredictStreak(st, DateTime.UtcNow.Date));
 
                 if (preview.IsChoiceDay)
@@ -402,11 +408,7 @@ namespace Server.Custom.LoginRewards
             if (pm == null || pm.Deleted)
                 return true;
 
-            string key = GetIdentityKey(pm);
-            if (string.IsNullOrEmpty(key))
-                return true;
-
-            RewardState st = GetOrCreateState(key);
+            RewardState st = GetOrCreateState(pm);
             return st.LastClaimDateUtc == DateTime.UtcNow.Date;
         }
 
@@ -417,10 +419,8 @@ namespace Server.Custom.LoginRewards
 
             pm.CloseGump(typeof(LoginRewardsClaimGump));
 
-            string key = GetIdentityKey(pm);
-            RewardState st = GetOrCreateState(key);
-
-            DateTime today = DateTime.UtcNow.Date;
+            RewardState st = GetOrCreateState(pm);
+DateTime today = DateTime.UtcNow.Date;
             bool alreadyClaimed = (st.LastClaimDateUtc == today);
 
             int predictedStreak = PredictStreak(st, today);
@@ -434,10 +434,8 @@ namespace Server.Custom.LoginRewards
             if (pm == null || pm.Deleted)
                 return false;
 
-            string key = GetIdentityKey(pm);
-            RewardState st = GetOrCreateState(key);
-
-            DateTime today = DateTime.UtcNow.Date;
+            RewardState st = GetOrCreateState(pm);
+DateTime today = DateTime.UtcNow.Date;
             int predictedStreak = PredictStreak(st, today);
 
             PreviewRewards preview = BuildPreview(predictedStreak);
@@ -538,17 +536,70 @@ namespace Server.Custom.LoginRewards
             if (pm == null)
                 return null;
 
-            if (!LoginRewardsCfg.OncePerAccountPerDay)
-                return "char:" + pm.Serial.Value.ToString(CultureInfo.InvariantCulture);
+            string mode = (LoginRewardsCfg.IdentityMode ?? "").Trim();
 
-            IAccount acc = pm.Account as IAccount;
-            if (acc != null && !string.IsNullOrEmpty(acc.Username))
-                return "acct:" + acc.Username;
+            // Default: Character
+            if (mode.Length == 0)
+                mode = LoginRewardsCfg.OncePerAccountPerDay ? "Account" : "Character";
 
+            if (mode.Equals("Account", StringComparison.OrdinalIgnoreCase))
+            {
+                IAccount acc = pm.Account as IAccount;
+
+                if (acc != null && !string.IsNullOrEmpty(acc.Username))
+                    return "acct:" + acc.Username;
+            }
+
+            // Character
             return "char:" + pm.Serial.Value.ToString(CultureInfo.InvariantCulture);
         }
 
-        private static RewardState GetOrCreateState(string key)
+        
+        private static RewardState GetOrCreateState(PlayerMobile pm)
+        {
+            string key = GetIdentityKey(pm);
+            if (string.IsNullOrEmpty(key))
+                key = "unknown";
+
+            RewardState st;
+            if (_states.TryGetValue(key, out st) && st != null)
+                return st;
+
+            // Migration helper:
+            // If we switched from Account->Character mode, and the character has no state yet,
+            // copy the old account state once so streak continuity isn't lost.
+            if (pm != null)
+            {
+                string mode = (LoginRewardsCfg.IdentityMode ?? "").Trim();
+
+                if (mode.Equals("Character", StringComparison.OrdinalIgnoreCase) || !LoginRewardsCfg.OncePerAccountPerDay)
+                {
+                    IAccount acc = pm.Account as IAccount;
+
+                    if (acc != null && !string.IsNullOrEmpty(acc.Username))
+                    {
+                        string acctKey = "acct:" + acc.Username;
+
+                        RewardState acctState;
+                        if (_states.TryGetValue(acctKey, out acctState) && acctState != null)
+                        {
+                            st = new RewardState();
+                            st.LastClaimDateUtc = acctState.LastClaimDateUtc;
+                            st.Streak = acctState.Streak;
+                            st.TotalClaims = acctState.TotalClaims;
+                        }
+                    }
+                }
+            }
+
+            if (st == null)
+                st = new RewardState();
+
+            _states[key] = st;
+            return st;
+        }
+
+private static RewardState GetOrCreateState(string key)
         {
             if (string.IsNullOrEmpty(key))
                 key = "unknown";
@@ -1244,10 +1295,8 @@ namespace Server.Custom.LoginRewards
             if (pm == null || pm.Deleted)
                 return false;
 
-            string key = GetIdentityKey(pm);
-            RewardState st = GetOrCreateState(key);
-
-            DateTime today = DateTime.UtcNow.Date;
+            RewardState st = GetOrCreateState(pm);
+DateTime today = DateTime.UtcNow.Date;
             int predictedStreak = PredictStreak(st, today);
             PreviewRewards preview = BuildPreview(predictedStreak);
 

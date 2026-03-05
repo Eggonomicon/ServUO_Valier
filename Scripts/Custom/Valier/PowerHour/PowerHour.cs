@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 
 using Server;
 using Server.Commands;
+using Server.Accounting;
 using Server.Items;
 using Server.Mobiles;
 using Server.Network;
@@ -198,9 +200,10 @@ namespace Server.Custom.PowerHour
     public class PowerHourToken : Item
     {
         [Constructable]
-        public PowerHourToken() : base(0x14F0)
+        public PowerHourToken() : base(0x0EED)
         {
             Name = "a power hour token";
+			Hue = 0x489; // Warm Orange Glow
             Weight = 1.0;
             LootType = LootType.Regular;
         }
@@ -265,6 +268,11 @@ namespace Server.Custom.PowerHour
             CommandSystem.Register("GivePowerHourToken", AccessLevel.GameMaster, OnGiveToken);
             CommandSystem.Register("ReloadPowerHour", AccessLevel.GameMaster, OnReload);
             CommandSystem.Register("PowerHourInfo", AccessLevel.GameMaster, OnInfo);
+
+            // Persistence across logout/relog
+            EventSink.Login += OnLogin;
+            EventSink.Logout += OnLogout;
+
         }
 
         private static void OnReload(CommandEventArgs e)
@@ -285,6 +293,200 @@ namespace Server.Custom.PowerHour
             m.SendMessage(0x59, "PowerHour.TickMs={0}", PowerHourCfg.TickMs);
             m.SendMessage(0x59, "PowerHour.MaxBonusPerTick={0}", PowerHourCfg.MaxBonusPerTick.ToString(CultureInfo.InvariantCulture));
         }
+
+        // =========================
+        // Persistence (Account tags keyed by character serial)
+        // =========================
+        private static void OnLogin(LoginEventArgs e)
+        {
+            PlayerMobile pm = e.Mobile as PlayerMobile;
+
+            if (pm == null || pm.Deleted)
+                return;
+
+            TryResume(pm);
+        }
+
+        private static void OnLogout(LogoutEventArgs e)
+        {
+            PlayerMobile pm = e.Mobile as PlayerMobile;
+
+            if (pm == null)
+                return;
+
+            // Stop ticking while offline, but DO NOT clear persisted end time.
+            PowerHourContext ctx;
+            if (_active.TryGetValue(pm.Serial, out ctx) && ctx != null)
+            {
+                ctx.Stop();
+                _active.Remove(pm.Serial);
+            }
+        }
+
+        private static string TagPrefix(PlayerMobile pm)
+        {
+            return "VPH." + pm.Serial.Value.ToString(CultureInfo.InvariantCulture) + ".";
+        }
+
+        private static string TagEnd(PlayerMobile pm) { return TagPrefix(pm) + "EndUtc"; }
+        private static string TagMult(PlayerMobile pm) { return TagPrefix(pm) + "Mult"; }
+
+        private static void Persist(PlayerMobile pm, DateTime endUtc, double mult)
+        {
+            if (pm == null)
+                return;
+
+            object acc = pm.Account;
+
+            if (acc == null)
+                return;
+
+            SetAccTag(acc, TagEnd(pm), endUtc.ToString("o", CultureInfo.InvariantCulture));
+            SetAccTag(acc, TagMult(pm), mult.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static void ClearPersist(PlayerMobile pm)
+        {
+            if (pm == null)
+                return;
+
+            object acc = pm.Account;
+
+            if (acc == null)
+                return;
+
+            RemoveAccTag(acc, TagEnd(pm));
+            RemoveAccTag(acc, TagMult(pm));
+        }
+
+        private static void TryResume(PlayerMobile pm)
+        {
+            if (pm == null)
+                return;
+
+            object acc = pm.Account;
+
+            if (acc == null)
+                return;
+
+            string endStr = GetAccTag(acc, TagEnd(pm));
+            if (string.IsNullOrEmpty(endStr))
+                return;
+
+            DateTime endUtc;
+            if (!DateTime.TryParse(endStr, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out endUtc))
+            {
+                ClearPersist(pm);
+                return;
+            }
+
+            if (DateTime.UtcNow >= endUtc)
+            {
+                ClearPersist(pm);
+                return;
+            }
+
+            string multStr = GetAccTag(acc, TagMult(pm));
+            double mult = PowerHourCfg.Multiplier;
+
+            double parsed;
+            if (!string.IsNullOrEmpty(multStr) && double.TryParse(multStr, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+                mult = parsed;
+
+            TimeSpan remaining = endUtc - DateTime.UtcNow;
+
+            // Re-activate without consuming a token
+            TryActivate(pm, remaining, mult, showMessages: true);
+        }
+
+        // Reflection-based Account tag helpers (works across forks)
+        private static string GetAccTag(object accountObj, string key)
+        {
+            if (accountObj == null || string.IsNullOrEmpty(key))
+                return null;
+
+            try
+            {
+                Type t = accountObj.GetType();
+
+                MethodInfo mi = t.GetMethod("GetTag", BindingFlags.Instance | BindingFlags.Public, null, new[] { typeof(string) }, null);
+                if (mi != null)
+                    return mi.Invoke(accountObj, new object[] { key }) as string;
+
+                PropertyInfo pi = t.GetProperty("Tags", BindingFlags.Instance | BindingFlags.Public);
+                if (pi != null)
+                {
+                    object tagsObj = pi.GetValue(accountObj, null);
+                    var dict = tagsObj as System.Collections.IDictionary;
+                    if (dict != null && dict.Contains(key))
+                        return dict[key] as string;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private static void SetAccTag(object accountObj, string key, string val)
+        {
+            if (accountObj == null || string.IsNullOrEmpty(key))
+                return;
+
+            try
+            {
+                Type t = accountObj.GetType();
+
+                MethodInfo mi = t.GetMethod("SetTag", BindingFlags.Instance | BindingFlags.Public, null, new[] { typeof(string), typeof(string) }, null);
+                if (mi != null)
+                {
+                    mi.Invoke(accountObj, new object[] { key, val });
+                    return;
+                }
+
+                PropertyInfo pi = t.GetProperty("Tags", BindingFlags.Instance | BindingFlags.Public);
+                if (pi != null)
+                {
+                    object tagsObj = pi.GetValue(accountObj, null);
+                    var dict = tagsObj as System.Collections.IDictionary;
+                    if (dict != null)
+                    {
+                        dict[key] = val;
+                        return;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private static void RemoveAccTag(object accountObj, string key)
+        {
+            if (accountObj == null || string.IsNullOrEmpty(key))
+                return;
+
+            try
+            {
+                Type t = accountObj.GetType();
+
+                MethodInfo mi = t.GetMethod("RemoveTag", BindingFlags.Instance | BindingFlags.Public, null, new[] { typeof(string) }, null);
+                if (mi != null)
+                {
+                    mi.Invoke(accountObj, new object[] { key });
+                    return;
+                }
+
+                PropertyInfo pi = t.GetProperty("Tags", BindingFlags.Instance | BindingFlags.Public);
+                if (pi != null)
+                {
+                    object tagsObj = pi.GetValue(accountObj, null);
+                    var dict = tagsObj as System.Collections.IDictionary;
+                    if (dict != null && dict.Contains(key))
+                        dict.Remove(key);
+                }
+            }
+            catch { }
+        }
+
+
 
         public static bool TryActivate(Mobile m, TimeSpan duration, double multiplier, bool showMessages)
         {
@@ -323,6 +525,8 @@ namespace Server.Custom.PowerHour
                 existing.End = DateTime.UtcNow + newRemaining;
                 existing.Multiplier = Math.Max(existing.Multiplier, multiplier);
 
+                Persist(m as PlayerMobile, existing.End, existing.Multiplier);
+
                 if (showMessages)
                     m.SendMessage(0x59, "Power Hour extended. Time remaining: {0:mm\\:ss}.", newRemaining);
 
@@ -331,6 +535,7 @@ namespace Server.Custom.PowerHour
 
             PowerHourContext ctx = new PowerHourContext(m, DateTime.UtcNow + duration, multiplier);
             _active[m.Serial] = ctx;
+            Persist(m as PlayerMobile, ctx.End, ctx.Multiplier);
             ctx.Start();
 
             return true;
@@ -485,11 +690,25 @@ namespace Server.Custom.PowerHour
             {
                 Mobile m = Mobile;
 
-                if (m == null || m.Deleted || m.NetState == null || Expired)
+                if (m == null || m.Deleted)
                 {
-                    if (m != null && m.NetState != null)
-                        m.SendMessage(0x59, "Power Hour ended.");
+                    Stop();
+                    PowerHourSystem.Stop(m);
+                    return;
+                }
 
+                // Offline: stop ticking, keep persisted data so it can resume on login
+                if (m.NetState == null)
+                {
+                    Stop();
+                    PowerHourSystem.Stop(m);
+                    return;
+                }
+
+                if (Expired)
+                {
+                    m.SendMessage(0x59, "Power Hour ended.");
+                    ClearPersist(m as PlayerMobile);
                     Stop();
                     PowerHourSystem.Stop(m);
                     return;
